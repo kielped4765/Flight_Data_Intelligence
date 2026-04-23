@@ -1,0 +1,8 @@
+build/
+*.exe
+*.o
+*.a
+data/*.csv
+data/*.log
+models/
+misc/
