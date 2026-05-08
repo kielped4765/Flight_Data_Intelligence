@@ -60,7 +60,7 @@ def make_packet(seq: int, inject_fault: str | None) -> bytes:
         altitude -= 2000.0                              # Sudden 2000ft loss
     
 
-        fault_flags = |0x02
+        fault_flags |= 0x02
     elif inject_fault == 'gps_freeze':
         latitude = 47.6062                              # GPS locked (no change)
         longitude = -122.3321
@@ -104,8 +104,7 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     seq = 0
 
-    print(f'Simulator running at 10Hz | fault={args.fault} |
-corrupt={args.corrupt}')
+    print(f'Simulator running at 10Hz | fault={args.fault} |corrupt={args.corrupt}')
     print('Sending to 127.0.0.1:5005 ...')
 
     while True:

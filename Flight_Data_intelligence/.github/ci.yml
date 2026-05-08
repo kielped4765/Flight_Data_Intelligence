@@ -1,0 +1,62 @@
+name: CI
+
+# -- Triggers ----------------------------------------------
+# Run on every push to main and every pull request targeting main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # -- Job 1: Build and test C++ ----------------------------
+  cpp-build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake g++ libgtest-dev
+
+      - name: Build
+        run: cmake --build build -j4
+
+      - name: Run unit tests
+        run: cd build && ctest --verbose --output-on-failure
+
+  # -- Job 2: Python validation -----------------------------
+  python-validation:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check all imports resolve
+        run: |
+          python3 -c "
+          import pandas, numpy, sklearn, joblib
+          import influxdb_client, fastapi, uvicorn
+          print ('All imports ok')"
+
+      - name: Verify simulator packet size
+        run: |
+          python3 -c "
+          import struct
+          fmt = '<IQ7fBH' 
+          size = struct.calcsize(fmt)
+          assert size == 43, f'Packet size mismatch: {size} != 43'
+          print (f'Packet format size: {size} bytes (correct)')"
