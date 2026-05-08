@@ -1,0 +1,97 @@
+version: '3.8'
+
+# --- Networks -----------------------------
+# Services communicate using service names as hostnames.
+# The pipeline reaches InfluxDB at http://influxdb:8086,
+# not http://localhost:8086 (localhost is inside the container).
+networks:
+  aero-net:
+    driver: bridge
+
+# ---- Volumes -----------------------------
+# Named volumes persist data across container restarts.
+# Without this, InfluxDB loses all data every time it restarts.
+volumes:
+  influxdb-data:
+  grafana-data:
+
+services:
+
+  # -- InfluxDB: time-series database --------------------
+  influxdb:
+    image: influxdb:2.7
+    networks:
+      - aero-net
+    ports:
+      - '8086:8086'   # host:container
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: aerosentinel123
+      DOCKER_INFLUXDB_INIT_ORG: aerosentinel-org
+      DOCKER_INFLUXDB_INIT_BUCKET: aerosentinel
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: aerosentinel-init-token
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8086/ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Grafana: visualization dashboard ───────────────────────
+  grafana:
+    image: grafana/grafana:10.2.0
+    networks:
+      - aero-net
+    ports:
+      - '3000:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: aerosentinel
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    depends_on:
+      influxdb:
+        condition: service_healthy # Wait for InfluxDB to be ready
+  
+  # ── Python pipeline service ──────────────────────────────────
+  pipeline:
+    build:
+      context: ..  # Build context is project root
+      dockerfile: docker/Dockerfile.pipeline
+    networks:
+      - aero-net
+    volumes:
+      - ../data:/app/data          # Mount data/ so it sees C++ CSV output
+      - ../models:/app/models      # Mount models/ so it loads the trained model
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: aerosentinel-init-token
+      INFLUX_ORG: aerosentinel-org
+      INFLUX_BUCKET: aerosentinel
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped        # Auto-restart on crash
+  
+  # ── FastAPI REST backend ─────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.pipeline
+    command: uvicorn scripts.api:app --host 0.0.0.0 --port 8000
+    networks:
+      - aero-net
+    ports:
+      - '8000:8000'
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: aerosentinel-init-token
+      AERO_API_KEY: aerosentinel-dev-key
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,0 +1,26 @@
+# -- Base Image --------------------------------
+# python:3.11-slim is a minimal Debian image with Python installed.
+# 'slim' excludes development tools, docs, and test files.
+# Result: ~150MB instead of ~900MB for the full image.
+FROM python:3.11-slim
+
+# Set working directory inside the container
+WORKDIR /app
+
+# ── Layer 1: Install Python dependencies ─────────────────────
+# Copy requirements.txt FIRST (before any source code).
+# If requirements.txt is unchanged, Docker uses the cached layer
+# and skips the expensive pip install on every rebuild.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── Layer 2: Copy application code ───────────────────────────
+# This layer is rebuilt whenever any source file changes.
+# Kept separate from dependencies so code changes don't
+# trigger a full pip install.
+COPY scripts/ ./scripts/
+
+# ── Default command ──────────────────────────────────────────
+# docker-compose.yml can override this with 'command:'
+# Here the default runs the data pipeline.
+CMD ["python3", "scripts/pipeline.py"]
