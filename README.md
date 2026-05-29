@@ -1,4 +1,4 @@
-# AeroSentinel 
+# Flight_Data_Intelligence 
 
 [![CI](https://github.com/kielped4765/Flight_Data_Intelligence/actions/workflows/ci.yml/badge.svg)](https://github.com/kielped4765/Flight_Data_Intelligence/actions)
 ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)
