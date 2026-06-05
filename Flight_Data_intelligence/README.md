@@ -110,8 +110,6 @@ In terminal 2...
 
 Then check http://localhost:8000/docs to verify
 
-## Security
-See [SECURITY.md](SECURITY.md) for implementation notes and production
 hardening checklist (JWT, mTLS, RBAC, FedRAMP considerations).
 
 ## Project Status
