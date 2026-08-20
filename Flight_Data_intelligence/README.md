@@ -17,99 +17,136 @@ This program was run on MSYM2 for the terminal windows
 '''bash
 ## From the project root
 
-## 1. Initialize Python Environment
-python -m venv .venv
-source .venv/Scripts/activate
-./.venv/Scripts/python.exe -m pip install pandas fastapi uvicorn joblib scikit-learn numpy
+Running & Testing AeroSentinel
+Prerequisites
 
-## 2. Build the C++ Receiver
-'''bash
-mkdir -p data build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=DEBUG -G "MinGW Makefiles"
-mingw32-make 
+Make sure these are installed before starting:
 
-## Running the Pipeline (4 Terminal Sequence)
-1. C++ Receiver           ./build/Flight_Data_Intelligence.exe
-2. Simulator              ./.venv/Scripts/python.exe 
-                            scripts/simulator.py
-3. FastAPI                ./.venv/Scripts/python.exe
-                            scripts/api.py
-4. ML Pipeline            ./.venv/Scripts/python.exe
-                            scripts/pipeline.py
+MSYS2 MINGW64
+Python 3.11+ with virtual environment
+CMake 3.20+
+Docker Desktop (for Grafana — optional)
+Step 1 — Build the C++ receiver
 
-## Architecture & Data Flow
-1. Ingestion: Flight_Data_Intelligence.exe (C++) listens on UDP :5005. It validates binary packets using CRC-16/CCITT.
+## Step 1: Open MINGW64 Terminal 1 and run:
 
-2. Storage: Validated frames are stored in a thread-safe Ring Buffer and flushed to data/telemetry.csv.
+bash
+cd /c/Users/peder/Flight_Data_intelligence/build
+cmake .. -DCMAKE_BUILD_TYPE=Debug -G "MinGW Makefiles"
+mingw32-make
 
-3. Analysis: pipeline.py monitors the CSV, computes derived features, and runs an Isolation Forest model to detect anomalies.
+Expected output: [100%] Built target Flight_Data_Intelligence
 
-4. Access: api.py serves the latest telemetry and detected anomalies via a REST API with Swagger documentation.
+## Step 2 — Start the C++ receiver
 
-## How this looks with the files:
+In the same Terminal 1 run:
 
-simulator.py (Python)
-|
-| UDP binary packets (10 Hz, CRC-16 validated)
-v
-aerosentinel (C++17)
-| -- UDP receiver, ring buffer, CSV writer
-v
-data/telemetry.csv
-|
-v
-pipeline.py (Python)
-| -- pandas, Isolation Forest, derived features
-v
-InfluxDB <──── Grafana (live dashboard)
-|
-v
-api.py / FastAPI ──── /docs (Swagger UI)
+bash
+./Flight_Data_Intelligence.exe
 
-## Tech stack
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| Telemetry engine | C++17, CMake, POSIX sockets | High-performance binary
-protocol handling |
-| Data validation | CRC-16/CCITT, Google Test, ASan | Packet integrity, unit
-tests, memory safety |
-| Analytics | Python, pandas, numpy | Feature engineering, data
-transformation |
-| ML | scikit-learn Isolation Forest | Unsupervised anomaly detection |
-| Storage | InfluxDB 2.x (Flux) | Time-series sensor data |
-| API | FastAPI, Pydantic, Uvicorn | REST endpoints, OpenAPI docs |
-| Visualization | Grafana | Live telemetry dashboard |
-| DevOps | Docker Compose, GitHub Actions | Reproducible deployment, CI |
+Expected output:
 
+AeroSentinel receiver listening on UDP :5005
+TelemetryFrame size: 43 bytes
+Waiting for packets from simulator.py...
 
-## Fault injection & anomaly detection
-The simulator supports four injected fault types for testing:
-```bash
-python3 scripts/simulator.py --fault engine_spike # RPM >> normal
-python3 scripts/simulator.py --fault altitude_drop # Sudden 2000ft loss
-python3 scripts/simulator.py --fault gps_freeze # GPS position locked
-python3 scripts/simulator.py --fault sensor_dropout # All sensors zero
-```
-The Isolation Forest model (trained on clean data) detects all four.
-Anomalies appear as red markers on the Grafana dashboard in real time.
+Leave this running.
 
-## Testing and Anomaly Detection
+## Step 3 — Start the Python simulator
 
-1. Unit Tests (C++)
+Open MINGW64 Terminal 2 and run:
 
-'''bash
-cd build
+bash
+cd /c/Users/peder/Flight_Data_intelligence
+python scripts/simulator.py
+
+Switch back to Terminal 1. You should immediately see:
+
+[OK  #0] alt=4840.3 spd=248.1 rpm=2382.0 flags=0
+[OK  #1] alt=4839.9 spd=248.2 rpm=2382.5 flags=0
+[CSV] Flushed 50 frames (total good: 50)
+
+Leave this running.
+
+## Step 4 — Start the REST API
+
+Open MINGW64 Terminal 3 and run:
+
+bash
+cd /c/Users/peder/Flight_Data_intelligence
+python scripts/api.py
+
+Expected output:
+
+INFO:     Uvicorn running on http://0.0.0.0:8000
+
+Leave this running.
+
+## Step 5 — Test the API
+
+Open MINGW64 Terminal 4 and run each command:
+
+bash
+# Public health check — no key needed
+curl http://localhost:8000/status
+# Expected: {"status":"online","service":"AeroSentinel","version":"1.0.0"}
+
+# Live telemetry — requires API key
+curl -H "X-API-Key: aerosentinel-dev-key" http://localhost:8000/telemetry/latest
+# Expected: {"latest":{...current telemetry row...},"field_count":10}
+
+# Anomaly log — requires API key
+curl -H "X-API-Key: aerosentinel-dev-key" http://localhost:8000/anomalies
+# Expected: {"count":0,"anomalies":[]}
+
+# Verify wrong key is rejected
+curl -H "X-API-Key: wrongkey" http://localhost:8000/telemetry/latest
+# Expected: {"detail":"Invalid or missing API key. Include header: X-API-Key"}
+Step 6 — Run unit tests
+
+## In Terminal 4 run:
+
+bash
+cd /c/Users/peder/Flight_Data_intelligence/build
 ctest --verbose
 
-2. Anomaly Detection Test
+Expected output:
 
-'''bash
-In terminal 2...
-./.venv/Scripts/python.exe scripts/simulator.py --fault engine_spike
+Test #1: ParserTest.ValidPacketParsesCorrectly    ... Passed
+Test #2: ParserTest.CorruptedByteFailsCRC         ... Passed
+Test #3: ParserTest.TooShortBufferReturnsFalse    ... Passed
+Test #4: ParserTest.SequenceNumberPreserved       ... Passed
+Test #5: RingBufferTest.PushPopSingleItem         ... Passed
+Test #6: RingBufferTest.FIFOOrder                ... Passed
+Test #7: RingBufferTest.OverflowOverwritesOldest  ... Passed
+Test #8: RingBufferTest.PopOnEmptyThrows         ... Passed
+Test #9: RingBufferTest.CapacityReported         ... Passed
 
-Then check http://localhost:8000/docs to verify
+100% tests passed, 0 tests failed
+Step 7 — Test fault injection
 
+<<<<<<< Updated upstream
+=======
+## In Terminal 2 stop the normal simulator with Ctrl+C then run:
+
+bash
+# Test engine spike detection
+python scripts/simulator.py --fault engine_spike
+
+# Test altitude drop detection
+python scripts/simulator.py --fault altitude_drop
+
+# Test GPS freeze detection
+python scripts/simulator.py --fault gps_freeze
+
+# Test sensor dropout detection
+python scripts/simulator.py --fault sensor_dropout
+
+# Test CRC rejection (corrupts 2% of packets)
+python scripts/simulator.py --corrupt
+## Security
+See [SECURITY.md](SECURITY.md) for implementation notes and production
+>>>>>>> Stashed changes
 hardening checklist (JWT, mTLS, RBAC, FedRAMP considerations).
 
 ## Project Status
