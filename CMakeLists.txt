@@ -52,8 +52,12 @@ add_executable(aero_tests
 )
 target_include_directories(aero_tests PRIVATE include)
 
-# Link both ws2_32 and gtest in one line — cleaner and equivalent
-target_link_libraries(aero_tests GTest::gtest_main ws2_32)
+
+if(WIN32)
+    target_link_libraries(aero_tests GTest::gtest_main ws2_32)
+else()
+    target_link_libraries(aero_tests GTest::gtest_main)
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(aero_tests)
