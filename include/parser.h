@@ -1,6 +1,7 @@
 #pragma once
 #include "telemetry.h"
-#include <cstdint> // size_t
+#include <cstdint>
+#include <cstddef>    // provides size_t on Linux
 
 // -- CRC-16 checksum ---------------------
 // Computes a 16-bit cyclic redundancy check over 'length' bytes.
