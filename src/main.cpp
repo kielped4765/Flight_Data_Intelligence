@@ -19,8 +19,6 @@
 #include "ring_buffer.h"
 
 // Tell the linker to include the Winsock library
-// This is Windows-only — on Linux you use -lsocket instead
-#pragma comment(lib, "ws2_32.lib")
 
 int main() {
     // ── 1. Initialize Winsock ────────────────────────────────
@@ -83,8 +81,12 @@ int main() {
     if (!csv.is_open()) {
         std::cerr << "ERROR: Could not open data/telemetry.csv\n"
                   << "       Make sure the data/ directory exists.\n";
-        closesocket(sock);
-        WSACleanup();
+        #ifdef _WIN32
+                closesocket(sock);
+                WSACleanup();
+        #else
+            close(sock);
+        #endif
         return 1;
     }
     csv << "seq,timestamp_us,altitude_ft,airspeed_kts,heading_deg,"
