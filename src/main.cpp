@@ -4,8 +4,15 @@
 #include <chrono>
 
 // Windows networking headers (replaces sys/socket.h on Linux)
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <unistd.h>
+#endif
 
 #include "telemetry.h"
 #include "parser.h"
@@ -20,11 +27,12 @@ int main() {
     // Windows requires WSAStartup before ANY socket call.
     // Linux has no equivalent — sockets work immediately.
     // MAKEWORD(2,2) requests Winsock version 2.2.
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "WSAStartup failed\n";
-        return 1;
-    }
+    #ifdef _WIN32
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            std::cerr << "WSAStartup failed\n";
+            return 1;
+        }
 
     // ── 2. Create UDP socket ─────────────────────────────────
     // AF_INET     = IPv4
@@ -36,6 +44,13 @@ int main() {
         WSACleanup();
         return 1;
     }
+#else
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("socket");
+        return 1;
+    }
+#endif
 
     // ── 3. Bind to port 5005 ─────────────────────────────────
     // sockaddr_in describes the address to listen on.
@@ -46,12 +61,20 @@ int main() {
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port        = htons(5005);
 
-    if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        std::cerr << "bind() failed: " << WSAGetLastError() << "\n";
-        closesocket(sock);
-        WSACleanup();
-        return 1;
-    }
+    #ifdef _WIN32
+        if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
+            std::cerr << "bind() failed: " << WSAGetLastError() << "\n";
+            closesocket(sock);
+            WSACleanup();
+            return 1;
+        }
+    #else
+        if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
+            perror("bind");
+            close(sock);
+            return 1;
+        }
+    #endif
 
     // ── 4. Data structures ───────────────────────────────────
     RingBuffer<TelemetryFrame, 512> buffer;
@@ -81,8 +104,13 @@ int main() {
     // recv() blocks until a UDP packet arrives.
     // On Windows the return type is int, not ssize_t like Linux.
     while (true) {
-        int n = recv(sock, reinterpret_cast<char*>(raw_buf), sizeof(raw_buf), 0);
-        if (n == SOCKET_ERROR) continue;
+        #ifdef _WIN32
+            int n = recv(sock, reinterpret_cast<char*>(raw_buf), sizeof(raw_buf), 0);
+            if (n == SOCKET_ERROR) continue;
+        #else
+            ssize_t n = recv(sock, raw_buf, sizeof(raw_buf), 0);
+            if (n < 0) continue;
+        #endif
 
         TelemetryFrame frame;
         if (parse_bytes(raw_buf, static_cast<size_t>(n), frame)) {
@@ -129,7 +157,10 @@ int main() {
     }
 
     // Cleanup (never reached in normal operation but good practice)
-    closesocket(sock);
-    WSACleanup();
-    return 0;
+    #ifdef _WIN32
+        closesocket(sock);
+        WSACleanup();
+    #else
+        close(sock);
+    #endif
 }

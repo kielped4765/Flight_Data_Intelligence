@@ -31,7 +31,9 @@ add_executable(Flight_Data_Intelligence
 target_include_directories(Flight_Data_Intelligence PRIVATE include)
 
 # Link Windows socket library (required for WSAStartup, socket, recv, etc.)
-target_link_libraries(Flight_Data_Intelligence ws2_32)
+if(WIN32)
+    target_link_libraries(Flight_Data_Intelligence ws2_32)
+endif()
 
 # Auto-create data/ directory after build
 add_custom_command(
